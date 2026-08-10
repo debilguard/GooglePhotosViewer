@@ -251,8 +251,10 @@
                 entries.forEach(entry => {
                     if (!entry.isIntersecting) return;
                     const media = entry.target;
+                    if (media.tagName === 'VIDEO') media.preload = 'metadata';
                     media.src = media.dataset.src;
                     media.removeAttribute('data-src');
+                    if (media.tagName === 'VIDEO') media.load();
                     mediaObserver.unobserve(media);
                 });
             }, { rootMargin: '700px 0px' });
@@ -283,11 +285,15 @@
                 }
                 card.querySelector('.info').remove();
                 const media = card.querySelector('img, video');
-                media.dataset.src = media.src;
+                media.dataset.src = p.is_video ? fileUrl : media.src;
                 media.removeAttribute('src');
                 if (p.is_video) {
                     media.preload = 'none';
                     media.muted = true;
+                    media.playsInline = true;
+                    media.addEventListener('loadedmetadata', () => {
+                        if (media.duration > 1) media.currentTime = 1;
+                    }, { once: true });
                 }
                 mediaObserver.observe(media);
 
