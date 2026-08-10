@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.mp4', '.mov'}
+CACHE_FILE_NAME = ".takeout_viewer_cache.json"
 
 MONTHS_ES = (
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -41,6 +42,8 @@ def _load_metadata(target_path: Path, progress_callback):
     base_metadata = {}
     global_base_metadata = {}
     for json_path in target_path.rglob("*.json"):
+        if json_path.name == CACHE_FILE_NAME:
+            continue
         try:
             _report(progress_callback, f"Leyendo metadatos: {json_path.name}")
             with open(json_path, "r", encoding="utf-8-sig") as file_handle:
@@ -48,6 +51,13 @@ def _load_metadata(target_path: Path, progress_callback):
             if not isinstance(data, dict):
                 continue
 
+            # Conservar únicamente los campos usados para fechar: así no se
+            # mantiene en memoria el JSON completo de cada elemento.
+            data = {
+                "title": data.get("title"),
+                "photoTakenTime": data.get("photoTakenTime"),
+                "creationTime": data.get("creationTime"),
+            }
             keys = {_name_key(json_path.name[:-5])}
             title = data.get("title")
             if isinstance(title, str) and title:
@@ -77,7 +87,10 @@ def _load_metadata(target_path: Path, progress_callback):
 def _taken_datetime(metadata, fallback_timestamp: float):
     if metadata:
         for field in ("photoTakenTime", "creationTime"):
-            value = metadata.get(field, {}).get("timestamp")
+            time_data = metadata.get(field)
+            if not isinstance(time_data, dict):
+                continue
+            value = time_data.get("timestamp")
             try:
                 if value not in (None, "", "0", 0):
                     return datetime.fromtimestamp(int(value)), True
@@ -100,6 +113,37 @@ def _datetime_from_filename(path: Path):
 def _report(progress_callback, message: str):
     if progress_callback:
         progress_callback(message)
+
+
+def _zip_signature(root_path: Path):
+    """Identifica cambios sin abrir ni recorrer los archivos descomprimidos."""
+    return [
+        {"name": path.name, "size": path.stat().st_size, "modified": path.stat().st_mtime_ns}
+        for path in sorted(root_path.glob("*.zip"), key=lambda item: item.name.casefold())
+    ]
+
+
+def _load_cached_library(target_path: Path, signature):
+    cache_path = target_path / CACHE_FILE_NAME
+    try:
+        with open(cache_path, "r", encoding="utf-8") as file_handle:
+            cache = json.load(file_handle)
+        items = cache.get("items")
+        if cache.get("zip_signature") != signature or not isinstance(items, list):
+            return None
+        if not all(Path(item.get("abs_path", "")).is_file() for item in items):
+            return None
+        return items
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _save_cached_library(target_path: Path, signature, items):
+    cache_path = target_path / CACHE_FILE_NAME
+    temporary_path = cache_path.with_suffix(".tmp")
+    with open(temporary_path, "w", encoding="utf-8") as file_handle:
+        json.dump({"zip_signature": signature, "items": items}, file_handle, ensure_ascii=False)
+    temporary_path.replace(cache_path)
 
 
 def extract_zip_files_if_needed(root_path: Path, progress_callback=None) -> Path:
@@ -135,7 +179,14 @@ def extract_zip_files_if_needed(root_path: Path, progress_callback=None) -> Path
     return output_dir
 
 def scan_takeout_directory(root_path: Path, progress_callback=None) -> list:
+    zip_signature = _zip_signature(root_path)
     target_path = extract_zip_files_if_needed(root_path, progress_callback)
+
+    cached_items = _load_cached_library(target_path, zip_signature)
+    if cached_items is not None:
+        _report(progress_callback, "Cargando biblioteca guardada...")
+        print(f"Biblioteca guardada cargada: {len(cached_items)} archivos.")
+        return cached_items
 
     print(f"Escaneando fotos/videos en: {target_path} ...")
     _report(progress_callback, f"Buscando fotos y videos en: {target_path}")
@@ -187,5 +238,7 @@ def scan_takeout_directory(root_path: Path, progress_callback=None) -> list:
             })
 
     items.sort(key=lambda x: x['timestamp'], reverse=True)
+    _report(progress_callback, "Guardando índice de la biblioteca...")
+    _save_cached_library(target_path, zip_signature, items)
     print(f"¡Listo! Se encontraron {len(items)} archivos.")
     return items
