@@ -30,9 +30,10 @@
         .date-group { margin-bottom: 30px; }
         .date-heading { margin: 0 0 12px; font-size: 1rem; font-weight: 600; color: #f1f5f9; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-        .card { background: #1e1e1e; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; transition: transform 0.15s ease; border: 1px solid #2a2a2a; }
+        .card { position: relative; background: #1e1e1e; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; transition: transform 0.15s ease; border: 1px solid #2a2a2a; }
         .card:hover { transform: scale(1.02); border-color: #3b82f6; }
         .card img, .card video { width: 100%; height: 160px; object-fit: cover; background: #2a2a2a; }
+        .video-icon { position: absolute; right: 10px; bottom: 10px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 0.9rem; pointer-events: none; }
         .info { padding: 8px; font-size: 0.75rem; color: #aaa; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); justify-content: center; align-items: center; flex-direction: column; }
@@ -178,16 +179,8 @@
             }
         }
 
-        function updateStatusBanner(path, count) {
+        function updateStatusBanner() {
             document.getElementById('empty-state').style.display = 'none';
-            return;
-            const banner = document.getElementById('status-banner');
-            const text = document.getElementById('status-text');
-            const countEl = document.getElementById('status-count');
-            
-            text.innerHTML = `📍 Carpeta activa: <code>${path}</code>`;
-            countEl.textContent = `${count} elementos encontrados`;
-            banner.classList.add('show');
         }
 
         function showProgress(message) {
@@ -195,11 +188,6 @@
             document.getElementById('empty-message').textContent = message;
             document.getElementById('empty-help').textContent = '';
             document.getElementById('empty-state').style.display = 'block';
-            return;
-            const banner = document.getElementById('status-banner');
-            document.getElementById('status-text').textContent = message;
-            document.getElementById('status-count').textContent = '';
-            banner.classList.add('show');
         }
 
         async function refreshProgress() {
@@ -293,6 +281,11 @@
                     media.addEventListener('loadedmetadata', () => {
                         if (media.duration > 1) media.currentTime = 1;
                     }, { once: true });
+                    const videoIcon = document.createElement('span');
+                    videoIcon.className = 'video-icon';
+                    videoIcon.textContent = '▶';
+                    videoIcon.setAttribute('aria-label', 'Video');
+                    card.appendChild(videoIcon);
                 }
                 mediaObserver.observe(media);
 
