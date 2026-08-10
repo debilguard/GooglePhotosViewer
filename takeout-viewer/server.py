@@ -20,6 +20,19 @@ state_lock = Lock()
 class TakeoutHTTPHandler(BaseHTTPRequestHandler):
     static_dir = Path(__file__).parent / "static"
 
+    def handle_one_request(self):
+        """Las cancelaciones del navegador no son errores del servidor."""
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            self.close_connection = True
+            return
+        except OSError as error:
+            if getattr(error, "winerror", None) in (10053, 10054):
+                self.close_connection = True
+                return
+            raise
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         
