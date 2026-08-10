@@ -33,6 +33,7 @@
         .card { position: relative; background: #1e1e1e; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; transition: transform 0.15s ease; border: 1px solid #2a2a2a; }
         .card:hover { transform: scale(1.02); border-color: #3b82f6; }
         .card img, .card video { width: 100%; height: 160px; object-fit: cover; background: #2a2a2a; }
+        .video-thumbnail { width: 100%; height: 160px; display: grid; place-items: center; background: linear-gradient(135deg, #1f2937, #111827); color: #cbd5e1; font-size: 2rem; }
         .video-icon { position: absolute; right: 10px; bottom: 10px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 0.9rem; pointer-events: none; }
         .info { padding: 8px; font-size: 0.75rem; color: #aaa; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -150,10 +151,10 @@
 
                 const data = await res.json();
                 clearInterval(progressTimer);
-                btnScan.innerHTML = 'Cargar';
-                btnScan.disabled = false;
 
                 if (!data.success) {
+                    btnScan.innerHTML = 'Cargar';
+                    btnScan.disabled = false;
                     alert('Error: ' + data.error);
                     return;
                 }
@@ -169,7 +170,9 @@
                 hasMorePhotos = true;
                 setupMediaObserver();
                 document.getElementById('gallery').innerHTML = '';
-                loadPhotos();
+                await loadPhotos();
+                btnScan.innerHTML = 'Cargar';
+                btnScan.disabled = false;
 
             } catch (err) {
                 clearInterval(progressTimer);
@@ -266,12 +269,18 @@
                 card.onclick = () => openModal(index);
 
                 if (p.is_video) {
+                    card.innerHTML = '<div class="video-thumbnail" aria-label="Video">▶</div>';
+                } else if (p.is_video) {
                     card.innerHTML = `<video src="${fileUrl}#t=0.1" preload="metadata"></video><div class="info" title="${p.title}">🎥 ${p.taken_time}</div>`;
                 } else {
                     card.innerHTML = `<img src="${fileUrl}" loading="lazy" alt="${p.title}" /><div class="info" title="${p.title}">${p.taken_time}</div>`;
                 }
-                card.querySelector('.info').remove();
-                const media = card.querySelector('img, video');
+                card.querySelector('.info')?.remove();
+                const media = card.querySelector('img');
+                if (!media) {
+                    getOrCreateDateGrid(p).appendChild(card);
+                    return;
+                }
                 media.dataset.src = p.is_video ? fileUrl : media.src;
                 media.removeAttribute('src');
                 if (p.is_video) {
