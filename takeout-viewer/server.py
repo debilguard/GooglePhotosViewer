@@ -212,4 +212,7 @@ class TakeoutHTTPHandler(BaseHTTPRequestHandler):
         return
 
 def create_server(port: int = 8000) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer(('localhost', port), TakeoutHTTPHandler)
+    server = ThreadingHTTPServer(('localhost', port), TakeoutHTTPHandler)
+    # Las conexiones de medios canceladas no deben retener el cierre de la app.
+    server.daemon_threads = True
+    return server
