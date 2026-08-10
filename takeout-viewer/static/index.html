@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Google Photos Takeout Viewer</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background: #121212; color: #fff; margin: 0; padding: 20px; }
+        
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; background: #1e1e1e; padding: 15px 20px; border-radius: 10px; border: 1px solid #333; }
+        .header-title { display: flex; align-items: center; gap: 12px; }
+        h1 { margin: 0; font-size: 1.4rem; font-weight: 600; color: #f1f1f1; }
+
+        .folder-picker-bar { display: flex; align-items: center; gap: 10px; background: #2a2a2a; padding: 8px 14px; border-radius: 8px; border: 1px solid #444; flex-grow: 1; max-width: 650px; }
+        .folder-picker-bar input { background: transparent; border: none; color: #20c997; font-family: monospace; font-size: 0.9rem; flex-grow: 1; outline: none; }
+        .folder-picker-bar input::placeholder { color: #888; font-family: system-ui; }
+
+        .btn { background: #3b82f6; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-size: 0.88rem; font-weight: 500; cursor: pointer; transition: background 0.2s ease; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:hover { background: #2563eb; }
+        .btn-secondary { background: #374151; color: #e5e7eb; }
+        .btn-secondary:hover { background: #4b5563; }
+
+        .controls { display: flex; align-items: center; gap: 15px; }
+        select { background: #2a2a2a; color: #fff; border: 1px solid #444; padding: 8px 12px; border-radius: 6px; font-size: 0.88rem; cursor: pointer; outline: none; }
+        select:hover { border-color: #666; }
+
+        .status-banner { display: none; background: #1e293b; color: #93c5fd; padding: 10px 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1e40af; font-size: 0.9rem; align-items: center; justify-content: space-between; }
+        .status-banner.show { display: flex; }
+
+        .empty-state { text-align: center; padding: 60px 20px; background: #1e1e1e; border-radius: 12px; border: 2px dashed #333; margin-top: 20px; }
+        .empty-state h2 { font-size: 1.3rem; margin-bottom: 8px; color: #e2e8f0; }
+        .empty-state p { color: #94a3b8; font-size: 0.95rem; margin-bottom: 20px; }
+
+        .date-group { margin-bottom: 30px; }
+        .date-heading { margin: 0 0 12px; font-size: 1rem; font-weight: 600; color: #f1f5f9; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+        .card { background: #1e1e1e; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; transition: transform 0.15s ease; border: 1px solid #2a2a2a; }
+        .card:hover { transform: scale(1.02); border-color: #3b82f6; }
+        .card img, .card video { width: 100%; height: 160px; object-fit: cover; background: #2a2a2a; }
+        .info { padding: 8px; font-size: 0.75rem; color: #aaa; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); justify-content: center; align-items: center; flex-direction: column; }
+        .modal.active { display: flex; }
+        .modal-content { max-width: 85%; max-height: 80vh; object-fit: contain; border-radius: 4px; box-shadow: 0 4px 20px rgba(0,0,0,0.8); }
+        .close-btn { position: absolute; top: 20px; right: 30px; color: #fff; font-size: 35px; cursor: pointer; font-weight: bold; user-select: none; }
+        .nav-btn { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 40px; cursor: pointer; padding: 15px; user-select: none; background: rgba(0,0,0,0.3); border-radius: 50%; }
+        .nav-btn:hover { background: rgba(255,255,255,0.2); }
+        .prev { left: 20px; }
+        .next { right: 20px; }
+        .caption { margin-top: 15px; color: #ccc; font-size: 0.9rem; text-align: center; max-width: 80%; }
+        
+        .loading-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title">
+            <h1>🖼️ Takeout Viewer</h1>
+        </div>
+
+        <div class="folder-picker-bar">
+            <span style="font-size:1.1rem;">📁</span>
+            <input type="text" id="path-input" placeholder="Pega aquí la ruta completa de tu carpeta Takeout..." onkeydown="if(event.key==='Enter') applyPath()" />
+            <button class="btn btn-secondary" onclick="browseFolder()" title="Abrir explorador de archivos">Examinar...</button>
+            <button class="btn" id="btn-scan" onclick="applyPath()">Cargar</button>
+        </div>
+
+        <div class="controls">
+            <select id="type-filter" onchange="handleFilterChange()">
+                <option value="all">📁 Todos</option>
+                <option value="image">📷 Solo Fotos</option>
+                <option value="video">🎥 Solo Videos</option>
+            </select>
+            <select id="year-filter" onchange="handleFilterChange()" aria-label="Filtrar por año">
+                <option value="all">Todos los años</option>
+            </select>
+        </div>
+    </header>
+
+    <div id="status-banner" class="status-banner">
+        <span id="status-text">Cargando carpeta...</span>
+        <span id="status-count" style="font-weight: bold; color: #60a5fa;"></span>
+    </div>
+
+    <div id="empty-state" class="empty-state" style="display: none;">
+        <h2>Sin carpeta seleccionada</h2>
+        <p>Introduce la ruta completa de tu carpeta con los archivos ZIP o fotos descomprimidas arriba y presiona <b>Cargar</b>.</p>
+        <p style="font-size: 0.85rem; color: #64748b;">Ejemplo Windows: <code>C:\Users\Nombre\Downloads\Takeout</code><br>Ejemplo Mac/Linux: <code>/Users/Nombre/Downloads/Takeout</code></p>
+    </div>
+
+    <div id="gallery"></div>
+
+    <div id="modal" class="modal" onclick="handleModalClick(event)">
+        <span class="close-btn">&times;</span>
+        <span class="nav-btn prev" onclick="navigateModal(-1)">&#10094;</span>
+        <span class="nav-btn next" onclick="navigateModal(1)">&#10095;</span>
+        <div id="modal-body" style="display:flex; justify-content:center; align-items:center; width:100%;"></div>
+        <div class="caption" id="modal-caption"></div>
+    </div>
+
+    <script>
+        let allPhotos = [];
+        let currentIndex = -1;
+        let page = 0;
+        const limit = 36;
+        let loading = false;
+        let hasMorePhotos = true;
+        let currentFilter = 'all';
+        let currentYear = 'all';
+        let dateGroups = new Map();
+        let mediaObserver;
+
+        async function init() {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+            
+            if (data.current_path) {
+                document.getElementById('path-input').value = data.current_path;
+                updateStatusBanner(data.current_path, data.total_items);
+                updateYearFilter(data.years);
+                loadPhotos();
+            } else {
+                document.getElementById('empty-state').style.display = 'block';
+            }
+        }
+
+        async function browseFolder() {
+            try {
+                const res = await fetch('/api/browse-folder');
+                const data = await res.json();
+                if (data.path) {
+                    document.getElementById('path-input').value = data.path;
+                    applyPath();
+                }
+            } catch (err) {
+                console.error("Error seleccionando carpeta:", err);
+            }
+        }
+
+        async function applyPath() {
+            const pathInput = document.getElementById('path-input').value.trim();
+            if (!pathInput) return alert('Por favor introduce una ruta válida.');
+
+            const btnScan = document.getElementById('btn-scan');
+            btnScan.innerHTML = '<span class="loading-spinner"></span> Escaneando...';
+            btnScan.disabled = true;
+            showProgress('Preparando la carga...');
+            const progressTimer = setInterval(refreshProgress, 350);
+
+            try {
+                const res = await fetch('/api/set-directory', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: pathInput })
+                });
+
+                const data = await res.json();
+                clearInterval(progressTimer);
+                btnScan.innerHTML = 'Cargar';
+                btnScan.disabled = false;
+
+                if (!data.success) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                document.getElementById('empty-state').style.display = 'none';
+                updateStatusBanner(data.current_path, data.total_items);
+                updateYearFilter(data.years);
+                
+                // Reiniciar galería
+                page = 0;
+                allPhotos = [];
+                dateGroups = new Map();
+                hasMorePhotos = true;
+                setupMediaObserver();
+                document.getElementById('gallery').innerHTML = '';
+                loadPhotos();
+
+            } catch (err) {
+                clearInterval(progressTimer);
+                btnScan.innerHTML = 'Cargar';
+                btnScan.disabled = false;
+                alert('Ocurrió un error al intentar comunicar con el servidor.');
+            }
+        }
+
+        function updateStatusBanner(path, count) {
+            const banner = document.getElementById('status-banner');
+            const text = document.getElementById('status-text');
+            const countEl = document.getElementById('status-count');
+            
+            text.innerHTML = `📍 Carpeta activa: <code>${path}</code>`;
+            countEl.textContent = `${count} elementos encontrados`;
+            banner.classList.add('show');
+        }
+
+        function showProgress(message) {
+            const banner = document.getElementById('status-banner');
+            document.getElementById('status-text').textContent = message;
+            document.getElementById('status-count').textContent = '';
+            banner.classList.add('show');
+        }
+
+        async function refreshProgress() {
+            try {
+                const res = await fetch('/api/progress');
+                const data = await res.json();
+                if (data.active && data.message) showProgress(data.message);
+            } catch (err) {
+                // La carga principal mostrarÃ¡ el error si el servidor no responde.
+            }
+        }
+
+        function updateYearFilter(years = []) {
+            const select = document.getElementById('year-filter');
+            const selected = currentYear;
+            select.innerHTML = '<option value="all">Todos los años</option>';
+            years.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                select.appendChild(option);
+            });
+            currentYear = years.map(String).includes(selected) ? selected : 'all';
+            select.value = currentYear;
+        }
+
+        function getDateGroup(photo) {
+            return { key: photo.date_key, label: photo.date_label };
+        }
+
+        function getOrCreateDateGrid(photo) {
+            const { key, label } = getDateGroup(photo);
+            if (dateGroups.has(key)) return dateGroups.get(key);
+
+            const section = document.createElement('section');
+            section.className = 'date-group';
+            section.innerHTML = '<h2 class="date-heading"></h2><div class="grid"></div>';
+            section.querySelector('.date-heading').textContent = label;
+            const grid = section.querySelector('.grid');
+            document.getElementById('gallery').appendChild(section);
+            dateGroups.set(key, grid);
+            return grid;
+        }
+
+        function setupMediaObserver() {
+            if (mediaObserver) mediaObserver.disconnect();
+            mediaObserver = new IntersectionObserver(entries => {
+                entries.forEach(entry => {
+                    if (!entry.isIntersecting) return;
+                    const media = entry.target;
+                    media.src = media.dataset.src;
+                    media.removeAttribute('data-src');
+                    mediaObserver.unobserve(media);
+                });
+            }, { rootMargin: '700px 0px' });
+        }
+
+        async function loadPhotos() {
+            if (loading || !hasMorePhotos) return;
+            loading = true;
+            
+            const res = await fetch(`/api/photos?page=${page}&limit=${limit}&type=${currentFilter}&year=${encodeURIComponent(currentYear)}`);
+            const photos = await res.json();
+            
+            photos.forEach(p => {
+                const index = allPhotos.length;
+                allPhotos.push(p);
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.title = p.title;
+                const fileUrl = `/file?path=${encodeURIComponent(p.abs_path)}`;
+                
+                card.onclick = () => openModal(index);
+
+                if (p.is_video) {
+                    card.innerHTML = `<video src="${fileUrl}#t=0.1" preload="metadata"></video><div class="info" title="${p.title}">🎥 ${p.taken_time}</div>`;
+                } else {
+                    card.innerHTML = `<img src="${fileUrl}" loading="lazy" alt="${p.title}" /><div class="info" title="${p.title}">${p.taken_time}</div>`;
+                }
+                card.querySelector('.info').remove();
+                const media = card.querySelector('img, video');
+                media.dataset.src = media.src;
+                media.removeAttribute('src');
+                if (p.is_video) {
+                    media.preload = 'none';
+                    media.muted = true;
+                }
+                mediaObserver.observe(media);
+
+                getOrCreateDateGrid(p).appendChild(card);
+            });
+
+            hasMorePhotos = photos.length === limit;
+            page++;
+            loading = false;
+        }
+
+        function handleFilterChange() {
+            currentFilter = document.getElementById('type-filter').value;
+            currentYear = document.getElementById('year-filter').value;
+            page = 0;
+            allPhotos = [];
+            dateGroups = new Map();
+            hasMorePhotos = true;
+            setupMediaObserver();
+            document.getElementById('gallery').innerHTML = '';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            loadPhotos();
+        }
+
+        function openModal(index) {
+            if (index < 0 || index >= allPhotos.length) return;
+            currentIndex = index;
+            const p = allPhotos[currentIndex];
+            const url = `/file?path=${encodeURIComponent(p.abs_path)}`;
+
+            const modal = document.getElementById('modal');
+            const body = document.getElementById('modal-body');
+            const caption = document.getElementById('modal-caption');
+
+            if (p.is_video) {
+                body.innerHTML = `<video src="${url}" class="modal-content" controls autoplay preload="auto"></video>`;
+            } else {
+                body.innerHTML = `<img src="${url}" class="modal-content" alt="${p.title}" />`;
+            }
+
+            const dateText = p.date_known ? p.date_label : 'Sin fecha';
+            caption.textContent = `${p.title} — ${dateText} (${currentIndex + 1} de ${allPhotos.length})`;
+            modal.classList.add('active');
+
+            if (currentIndex >= allPhotos.length - 10) {
+                loadPhotos();
+            }
+        }
+
+        function navigateModal(direction) {
+            const nextIndex = currentIndex + direction;
+            if (nextIndex >= 0 && nextIndex < allPhotos.length) {
+                openModal(nextIndex);
+            }
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('modal');
+            const body = document.getElementById('modal-body');
+            modal.classList.remove('active');
+            body.innerHTML = '';
+            currentIndex = -1;
+        }
+
+        function handleModalClick(e) {
+            if (e.target.id === 'modal' || e.target.className === 'close-btn') {
+                closeModal();
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const modal = document.getElementById('modal');
+            if (!modal.classList.contains('active')) return;
+
+            if (e.key === 'Escape') closeModal();
+            if (e.key === 'ArrowRight') navigateModal(1);
+            if (e.key === 'ArrowLeft') navigateModal(-1);
+        });
+
+        let scrollScheduled = false;
+        window.addEventListener('scroll', () => {
+            if (scrollScheduled) return;
+            scrollScheduled = true;
+            requestAnimationFrame(() => {
+                scrollScheduled = false;
+                if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 700) {
+                    loadPhotos();
+                }
+            });
+        }, { passive: true });
+
+        setupMediaObserver();
+        init();
+    </script>
+</body>
+</html>
