@@ -23,9 +23,6 @@
         select { background: #2a2a2a; color: #fff; border: 1px solid #444; padding: 8px 12px; border-radius: 6px; font-size: 0.88rem; cursor: pointer; outline: none; }
         select:hover { border-color: #666; }
 
-        .status-banner { display: none; background: #1e293b; color: #93c5fd; padding: 10px 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #1e40af; font-size: 0.9rem; align-items: center; justify-content: space-between; }
-        .status-banner.show { display: flex; }
-
         .empty-state { text-align: center; padding: 60px 20px; background: #1e1e1e; border-radius: 12px; border: 2px dashed #333; margin-top: 20px; }
         .empty-state h2 { font-size: 1.3rem; margin-bottom: 8px; color: #e2e8f0; }
         .empty-state p { color: #94a3b8; font-size: 0.95rem; margin-bottom: 20px; }
@@ -78,15 +75,10 @@
         </div>
     </header>
 
-    <div id="status-banner" class="status-banner">
-        <span id="status-text">Cargando carpeta...</span>
-        <span id="status-count" style="font-weight: bold; color: #60a5fa;"></span>
-    </div>
-
     <div id="empty-state" class="empty-state" style="display: none;">
-        <h2>Sin carpeta seleccionada</h2>
-        <p>Introduce la ruta completa de tu carpeta con los archivos ZIP o fotos descomprimidas arriba y presiona <b>Cargar</b>.</p>
-        <p style="font-size: 0.85rem; color: #64748b;">Ejemplo Windows: <code>C:\Users\Nombre\Downloads\Takeout</code><br>Ejemplo Mac/Linux: <code>/Users/Nombre/Downloads/Takeout</code></p>
+        <h2 id="empty-title">Sin carpeta seleccionada</h2>
+        <p id="empty-message">Introduce la ruta completa de tu carpeta con los archivos ZIP o fotos descomprimidas arriba y presiona <b>Cargar</b>.</p>
+        <p id="empty-help" style="font-size: 0.85rem; color: #64748b;">Ejemplo Windows: <code>C:\Users\Nombre\Downloads\Takeout</code><br>Ejemplo Mac/Linux: <code>/Users/Nombre/Downloads/Takeout</code></p>
     </div>
 
     <div id="gallery"></div>
@@ -187,6 +179,8 @@
         }
 
         function updateStatusBanner(path, count) {
+            document.getElementById('empty-state').style.display = 'none';
+            return;
             const banner = document.getElementById('status-banner');
             const text = document.getElementById('status-text');
             const countEl = document.getElementById('status-count');
@@ -197,6 +191,11 @@
         }
 
         function showProgress(message) {
+            document.getElementById('empty-title').textContent = 'Cargando biblioteca';
+            document.getElementById('empty-message').textContent = message;
+            document.getElementById('empty-help').textContent = '';
+            document.getElementById('empty-state').style.display = 'block';
+            return;
             const banner = document.getElementById('status-banner');
             document.getElementById('status-text').textContent = message;
             document.getElementById('status-count').textContent = '';
