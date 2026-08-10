@@ -1,2 +1,2 @@
 # GooglePhotosViewer
-Python app to show zip files downloaded with Google Takeout
+Google Takeout Viewer for files downloaded with Google Takeout
