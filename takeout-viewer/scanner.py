@@ -17,9 +17,16 @@ def _name_key(name: str) -> str:
     return name.casefold()
 
 
+def _base_media_key(name: str) -> str:
+    """Clave común para originales y variantes editadas exportadas por Takeout."""
+    stem = Path(name).stem.casefold()
+    stem = re.sub(r"(?:[ _-](?:edited|editado)|~\d+|\s*\(\d+\))$", "", stem)
+    return stem
+
+
 def _media_metadata_keys(path: Path) -> set[str]:
     """Genera las variantes que usa Google Takeout para nombres con copias."""
-    keys = {_name_key(path.name), _name_key(path.stem)}
+    keys = {_name_key(path.name), _name_key(path.stem), _base_media_key(path.name)}
     match = re.match(r"^(.*?)\(([0-9]+)\)(\.[^.]+)$", path.name)
     if match:
         base, number, extension = match.groups()
@@ -31,6 +38,8 @@ def _load_metadata(target_path: Path, progress_callback):
     """Carga los JSON una sola vez y los relaciona con el medio de su carpeta."""
     metadata = {}
     global_metadata = {}
+    base_metadata = {}
+    global_base_metadata = {}
     for json_path in target_path.rglob("*.json"):
         try:
             _report(progress_callback, f"Leyendo metadatos: {json_path.name}")
@@ -46,6 +55,9 @@ def _load_metadata(target_path: Path, progress_callback):
             for key in keys:
                 metadata[(json_path.parent, key)] = data
                 global_metadata.setdefault(key, []).append(data)
+            for key in {_base_media_key(key) for key in keys}:
+                base_metadata.setdefault((json_path.parent, key), []).append(data)
+                global_base_metadata.setdefault(key, []).append(data)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
     # Un nombre único puede asociarse con seguridad incluso si Takeout lo guardó
@@ -53,7 +65,13 @@ def _load_metadata(target_path: Path, progress_callback):
     unique_global_metadata = {
         key: entries[0] for key, entries in global_metadata.items() if len(entries) == 1
     }
-    return metadata, unique_global_metadata
+    unique_base_metadata = {
+        key: entries[0] for key, entries in base_metadata.items() if len(entries) == 1
+    }
+    unique_global_base_metadata = {
+        key: entries[0] for key, entries in global_base_metadata.items() if len(entries) == 1
+    }
+    return metadata, unique_global_metadata, unique_base_metadata, unique_global_base_metadata
 
 
 def _taken_datetime(metadata, fallback_timestamp: float):
@@ -122,7 +140,7 @@ def scan_takeout_directory(root_path: Path, progress_callback=None) -> list:
     print(f"Escaneando fotos/videos en: {target_path} ...")
     _report(progress_callback, f"Buscando fotos y videos en: {target_path}")
     items = []
-    metadata_by_file, global_metadata = _load_metadata(target_path, progress_callback)
+    metadata_by_file, global_metadata, base_metadata, global_base_metadata = _load_metadata(target_path, progress_callback)
 
     for path in target_path.rglob("*"):
         if path.is_file() and path.suffix.lower() in IMAGE_EXTS:
@@ -142,20 +160,28 @@ def scan_takeout_directory(root_path: Path, progress_callback=None) -> list:
                     ),
                     None,
                 )
+            if metadata is None:
+                metadata = base_metadata.get((path.parent, _base_media_key(path.name)))
+            if metadata is None:
+                metadata = global_base_metadata.get(_base_media_key(path.name))
             taken_at, date_known = _taken_datetime(metadata, os.path.getmtime(path))
             if not date_known:
                 filename_date = _datetime_from_filename(path)
                 if filename_date:
                     taken_at, date_known = filename_date, True
 
+            # Como último respaldo se usa la fecha del archivo; nunca se crea
+            # una categoría separada sin fecha.
+            date_known = True
+
             items.append({
                 "id": len(items),
                 "title": path.name,
                 "abs_path": str(path.resolve()),
                 "timestamp": taken_at.timestamp(),
-                "year": taken_at.year if date_known else None,
-                "date_key": taken_at.strftime("%Y-%m-%d") if date_known else "unknown",
-                "date_label": f"{taken_at.day} de {MONTHS_ES[taken_at.month - 1]} de {taken_at.year}" if date_known else "Sin fecha",
+                "year": taken_at.year,
+                "date_key": taken_at.strftime("%Y-%m-%d"),
+                "date_label": f"{taken_at.day} de {MONTHS_ES[taken_at.month - 1]} de {taken_at.year}",
                 "date_known": date_known,
                 "is_video": path.suffix.lower() in {'.mp4', '.mov'}
             })
