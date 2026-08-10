@@ -61,7 +61,7 @@
         <div class="folder-picker-bar">
             <span style="font-size:1.1rem;">📁</span>
             <input type="text" id="path-input" placeholder="Pega aquí la ruta completa de tu carpeta Takeout..." onkeydown="if(event.key==='Enter') applyPath()" />
-            <button class="btn btn-secondary" onclick="browseFolder()" title="Abrir explorador de archivos">Examinar...</button>
+            <button class="btn btn-secondary" id="btn-browse" onclick="browseFolder()" title="Abrir explorador de archivos">Examinar...</button>
             <button class="btn" id="btn-scan" onclick="applyPath()">Cargar</button>
         </div>
 
@@ -104,6 +104,14 @@
         let currentYear = 'all';
         let dateGroups = new Map();
         let mediaObserver;
+        let videoPreviewObserver;
+
+        function setLoadingControls(disabled) {
+            document.getElementById('btn-scan').disabled = disabled;
+            document.getElementById('btn-browse').disabled = disabled;
+            document.getElementById('type-filter').disabled = disabled;
+            document.getElementById('year-filter').disabled = disabled;
+        }
 
         async function init() {
             const res = await fetch('/api/status');
@@ -138,7 +146,7 @@
 
             const btnScan = document.getElementById('btn-scan');
             btnScan.innerHTML = '<span class="loading-spinner"></span> Escaneando...';
-            btnScan.disabled = true;
+            setLoadingControls(true);
             showProgress('Preparando la carga...');
             const progressTimer = setInterval(refreshProgress, 350);
 
@@ -154,7 +162,7 @@
 
                 if (!data.success) {
                     btnScan.innerHTML = 'Cargar';
-                    btnScan.disabled = false;
+                    setLoadingControls(false);
                     alert('Error: ' + data.error);
                     return;
                 }
@@ -169,15 +177,16 @@
                 dateGroups = new Map();
                 hasMorePhotos = true;
                 setupMediaObserver();
+                setupVideoPreviewObserver();
                 document.getElementById('gallery').innerHTML = '';
                 await loadPhotos();
                 btnScan.innerHTML = 'Cargar';
-                btnScan.disabled = false;
+                setLoadingControls(false);
 
             } catch (err) {
                 clearInterval(progressTimer);
                 btnScan.innerHTML = 'Cargar';
-                btnScan.disabled = false;
+                setLoadingControls(false);
                 alert('Ocurrió un error al intentar comunicar con el servidor.');
             }
         }
@@ -250,6 +259,42 @@
             }, { rootMargin: '700px 0px' });
         }
 
+        function createVideoPlaceholder() {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'video-thumbnail';
+            placeholder.setAttribute('aria-label', 'Video');
+            placeholder.textContent = '▶';
+            return placeholder;
+        }
+
+        function setupVideoPreviewObserver() {
+            if (videoPreviewObserver) videoPreviewObserver.disconnect();
+            videoPreviewObserver = new IntersectionObserver(entries => {
+                entries.forEach(entry => {
+                    const card = entry.target;
+                    const existingVideo = card.querySelector('video');
+                    if (entry.isIntersecting && !existingVideo) {
+                        const video = document.createElement('video');
+                        video.className = 'video-preview';
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.preload = 'metadata';
+                        video.src = card.dataset.videoUrl;
+                        video.addEventListener('loadedmetadata', () => {
+                            if (video.duration > 1) video.currentTime = 1;
+                        }, { once: true });
+                        card.querySelector('.video-thumbnail').replaceWith(video);
+                        video.load();
+                    } else if (!entry.isIntersecting && existingVideo) {
+                        existingVideo.pause();
+                        existingVideo.removeAttribute('src');
+                        existingVideo.load();
+                        existingVideo.replaceWith(createVideoPlaceholder());
+                    }
+                });
+            }, { rootMargin: '350px 0px' });
+        }
+
         async function loadPhotos() {
             if (loading || !hasMorePhotos) return;
             loading = true;
@@ -276,6 +321,12 @@
                     card.innerHTML = `<img src="${fileUrl}" loading="lazy" alt="${p.title}" /><div class="info" title="${p.title}">${p.taken_time}</div>`;
                 }
                 card.querySelector('.info')?.remove();
+                if (p.is_video) {
+                    card.dataset.videoUrl = fileUrl;
+                    videoPreviewObserver.observe(card);
+                    getOrCreateDateGrid(p).appendChild(card);
+                    return;
+                }
                 const media = card.querySelector('img');
                 if (!media) {
                     getOrCreateDateGrid(p).appendChild(card);
@@ -314,6 +365,7 @@
             dateGroups = new Map();
             hasMorePhotos = true;
             setupMediaObserver();
+            setupVideoPreviewObserver();
             document.getElementById('gallery').innerHTML = '';
             window.scrollTo({ top: 0, behavior: 'smooth' });
             loadPhotos();
@@ -387,6 +439,7 @@
         }, { passive: true });
 
         setupMediaObserver();
+        setupVideoPreviewObserver();
         init();
     </script>
 </body>
