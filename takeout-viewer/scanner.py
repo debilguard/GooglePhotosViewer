@@ -30,6 +30,7 @@ def _media_metadata_keys(path: Path) -> set[str]:
 def _load_metadata(target_path: Path, progress_callback):
     """Carga los JSON una sola vez y los relaciona con el medio de su carpeta."""
     metadata = {}
+    global_metadata = {}
     for json_path in target_path.rglob("*.json"):
         try:
             _report(progress_callback, f"Leyendo metadatos: {json_path.name}")
@@ -44,9 +45,15 @@ def _load_metadata(target_path: Path, progress_callback):
                 keys.update(_media_metadata_keys(Path(title)))
             for key in keys:
                 metadata[(json_path.parent, key)] = data
+                global_metadata.setdefault(key, []).append(data)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
-    return metadata
+    # Un nombre único puede asociarse con seguridad incluso si Takeout lo guardó
+    # en un álbum/carpeta distinta al archivo multimedia.
+    unique_global_metadata = {
+        key: entries[0] for key, entries in global_metadata.items() if len(entries) == 1
+    }
+    return metadata, unique_global_metadata
 
 
 def _taken_datetime(metadata, fallback_timestamp: float):
@@ -59,6 +66,18 @@ def _taken_datetime(metadata, fallback_timestamp: float):
             except (TypeError, ValueError, OSError):
                 continue
     return datetime.fromtimestamp(fallback_timestamp), False
+
+
+def _datetime_from_filename(path: Path):
+    """Respaldo para screenshots cuyo JSON no fue incluido en el Takeout."""
+    match = re.search(r"(?<!\d)(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)(?:[-_ ]?(\d{2})[-_:]?(\d{2})(?:[-_:]?(\d{2}))?)?", path.stem)
+    if not match:
+        return None
+    try:
+        year, month, day, hour, minute, second = match.groups()
+        return datetime(int(year), int(month), int(day), int(hour or 0), int(minute or 0), int(second or 0))
+    except ValueError:
+        return None
 
 def _report(progress_callback, message: str):
     if progress_callback:
@@ -103,7 +122,7 @@ def scan_takeout_directory(root_path: Path, progress_callback=None) -> list:
     print(f"Escaneando fotos/videos en: {target_path} ...")
     _report(progress_callback, f"Buscando fotos y videos en: {target_path}")
     items = []
-    metadata_by_file = _load_metadata(target_path, progress_callback)
+    metadata_by_file, global_metadata = _load_metadata(target_path, progress_callback)
 
     for path in target_path.rglob("*"):
         if path.is_file() and path.suffix.lower() in IMAGE_EXTS:
@@ -115,7 +134,19 @@ def scan_takeout_directory(root_path: Path, progress_callback=None) -> list:
                 ),
                 None,
             )
+            if metadata is None:
+                metadata = next(
+                    (
+                        data for key in _media_metadata_keys(path)
+                        if (data := global_metadata.get(key)) is not None
+                    ),
+                    None,
+                )
             taken_at, date_known = _taken_datetime(metadata, os.path.getmtime(path))
+            if not date_known:
+                filename_date = _datetime_from_filename(path)
+                if filename_date:
+                    taken_at, date_known = filename_date, True
 
             items.append({
                 "id": len(items),
